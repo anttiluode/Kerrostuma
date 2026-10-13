@@ -8,7 +8,7 @@ Each world is drawn from a seed: a hidden cooling rate and a hidden spin. You wa
 
 One HTML page, WebGL2, no libraries, no build. `core.js` holds the same laws on the CPU so they can be tested.
 
-**Live:** https://anttiluode.github.io/Kerrostuma/ (once Pages is enabled; see below)  ·  locally: `python3 -m http.server` and open `http://localhost:8000`
+**Live:** https://anttiluode.github.io/Kerrostuma/  ·  locally: `python3 -m http.server` and open `http://localhost:8000`
 
 | molten | cooling | the present | life |
 |---|---|---|---|
@@ -58,6 +58,35 @@ One HTML page, WebGL2, no libraries, no build. `core.js` holds the same laws on 
 - The lensing strength and all colours are artistic. The defect counter is a threshold on amplitude dips, not a topological charge count. The life rules are a custom excitable medium in the Physarum tradition (Jones 2010), not biology.
 - The planet is a model. Nothing here says real planets form this way.
 
+## Closure: does what the rock tells you close under what the planet does?
+
+The question, from the residue / dimensional-collapse thread: a compact code E of a big state X is only a *state* if, after an interaction q, the new code can be computed from the old code alone:
+
+  E(F(X, q)) = g(E(X), q)
+
+If two crusts share a code but the same query sends them to different next codes, the code threw away something the future needs. This is the lumpability / predictive-state condition, tested here on a physical system. Run it with `node experiments/closure.js` → `results/closure.json`.
+
+**Design.** 36 crusts on the demo torus: τ<sub>Q</sub> ∈ {30, 60, 120, 240} × age ∈ {40, 120, 360} × 3 seeds. Two queries the planet itself offers:
+- **wait**: 80 more time units.
+- **melt**: re-melt a fixed disk, re-cool, settle.
+
+The codes are E0, the page's census (defects, χ); E1, plus coherence, ξ and rms; E2, plus the local look around the melt site; and oracles that hold the hidden law. The score is leave-one-trajectory-out k-NN R² of each next-code from each code.
+
+| query → next code | E0 census | E1 | E2 local | hidden law | E0 + true age | E0 + true τ<sub>Q</sub> |
+|---|---|---|---|---|---|---|
+| wait → defects | **0.94** | 0.93 | 0.86 | 0.69 | 0.89 | 0.91 |
+| wait → coherence | **0.92** | 0.93 | 0.89 | 0.77 | 0.87 | 0.90 |
+| wait → change in defects | **0.75** | 0.68 | 0.23 | 0.71 | 0.54 | 0.44 |
+| melt → broken rock in scar | 0.25 | 0.23 | 0.26 | 0.14 | 0.28 | 0.38 |
+| melt → scar minus surroundings | −0.14 | −0.37 | −0.11 | −0.40 | −0.05 | −0.13 |
+
+**What it says**
+- **Under waiting, the census is a state.** Two numbers read off the rock predict its next reading better than the hidden law that made it (0.94 vs 0.69). The present beats the past as a predictor: seed-to-seed history differences matter, and the rock has already absorbed them.
+- **Waiting does not break the age–rate gauge.** Adding the true age or the true cooling rate to the census does not improve the prediction. Young crusts do coarsen faster (mean change in log-defects over the wait: −0.82 at age 40, −0.27 at age 120, −0.11 at age 360), but the census already accounts for that. *This corrects my prediction* that waiting would split matched-code pairs: crusts that read the same evolve the same, whichever past made them. The gauge hides the past, not the future.
+- **Melting does not close on any code tested, including the hidden law.** The scar copies its surroundings: broken rock 7.1 % inside vs 6.3 % around on τ<sub>Q</sub> = 30 crusts, and 0 / 0 on slow ones. The scar-minus-surroundings remainder is unpredictable (R² < 0). Its outcome is set by fine structure at the rim and the melt's own noise, below the resolution of every code here. This is the "keep the residue" case: no coarse summary absorbs it.
+
+**Limits.** 36 crusts, one melt site, one wait length. k-NN R² with 2–10 inputs on 36 points is noisy, and E2's drop is likely partly the curse of dimension. The oracle columns show no gain, which is not proof that none exists.
+
 ## Controls
 
 drag to orbit · wheel to zoom · click the planet to re-melt a patch · **replay history** · **new world** (the seed is in the URL hash, so `#73` is always the same world) · speed slider · *planet + flat map* shows the whole surface unrolled.
@@ -70,6 +99,7 @@ Worth trying: `#73` (fast cooling: broken crust, readable spin), `#59` (slow coo
 npm test                         # fast unit checks of core.js (~1 min)
 node experiments/run.js          # calibration, null band, blind worlds, life (~40 min on 2 cores)
 node experiments/run.js summarize
+node experiments/closure.js            # closure test (~45 min on 2 cores)
 python3 -m http.server 8123 & node tests/browser.cjs   # end-to-end GPU check in headless Chromium (slow: software WebGL)
 ```
 
@@ -79,8 +109,5 @@ python3 -m http.server 8123 & node tests/browser.cjs   # end-to-end GPU check in
 - `core.js`: the laws and the instruments (census, chevron index, defect count, life-on-fossils).
 - `calibration.json`: what the page reads the planet against. Generated, not hand-tuned.
 - `experiments/run.js` → `results/receipt.json`: the numbers above.
+- `experiments/closure.js` → `results/closure.json`: the closure test.
 - `tests/`: unit checks, the headless end-to-end run (`browser.cjs`) and a quick renderer (`render.cjs`).
-
-## Enabling the live page
-
-Settings → Pages → Source: **GitHub Actions**. The included workflow then publishes on every push to `main`.
