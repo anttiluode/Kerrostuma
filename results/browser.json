@@ -1,0 +1,25 @@
+{
+ "parity": {
+  "steps": 2000,
+  "maxAbsDiff": 6.367008609231561e-8,
+  "maxAbsPsi": 0.00018010054191108793,
+  "relErr": 0.00035352523327635666
+ },
+ "present": {
+  "tauQ": 32.10282728443257,
+  "spin": -1,
+  "xi": 17.436326820053825,
+  "chi": 0.1448382116421014,
+  "defects": 4.152018551528355,
+  "coh": 0.9305251107085633,
+  "verdict": "Cooling: the crust reads as fast (broken, many defects)\nSpin: the chevrons say retrograde (−)"
+ },
+ "life": {
+  "r": 0.7079923546623629,
+  "rShift": -0.017552089845392194,
+  "verdict": "Cooling: the crust reads as fast (broken, many defects)\nSpin: the chevrons say retrograde (−)"
+ },
+ "probe": "broken rock 0.0% inside vs 3.0% around",
+ "reveal": "Hidden law: τQ = 32, spin −, wind 1.08\ncooling class: true fast, read fast ✓\nspin ✓ read correctly",
+ "errors": []
+}

@@ -1,0 +1,11 @@
+{
+  "name": "kerrostuma",
+  "version": "0.1.0",
+  "description": "A planet whose present is a fossil of its past. WebGL2 + a tested CPU reference.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/core.test.cjs",
+    "receipts": "node experiments/run.js",
+    "summarize": "node experiments/run.js summarize"
+  }
+}

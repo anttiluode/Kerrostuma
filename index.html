@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kerrostuma</title>
+<style>
+:root{--ink:#e9e4d8;--dim:#8f8a7f;--faint:#4d4a44;--amber:#f2b45a;--teal:#6fe0c8;--rose:#ff7a6b;--bg:#05060a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:grab}
+canvas#gl:active{cursor:grabbing}
+.hud{position:fixed;pointer-events:none}
+.hud *{pointer-events:auto}
+#title{top:18px;left:20px}
+#title h1{margin:0;font:600 22px/1 ui-serif,Georgia,serif;letter-spacing:.32em}
+#title .sub{color:var(--dim);margin-top:6px;max-width:330px}
+#title .world{color:var(--amber);margin-top:8px;letter-spacing:.08em}
+#time{left:20px;right:20px;bottom:18px}
+.bar{position:relative;height:4px;background:#1a1916;border-radius:2px;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#ff6a2a,#f2b45a 45%,#cfd6d0 75%,#6fe0c8);width:0}
+.stages{display:flex;justify-content:space-between;margin-top:6px;color:var(--faint);letter-spacing:.14em;font-size:10px}
+.stages span.on{color:var(--ink)}
+.readout{display:flex;gap:18px;color:var(--dim);margin-bottom:8px;flex-wrap:wrap;align-items:center}
+.readout b{color:var(--ink);font-weight:500}
+button,select{font:inherit;color:var(--ink);background:#0d0e12cc;border:1px solid #2e2c28;border-radius:3px;padding:4px 9px;cursor:pointer}
+button:hover{border-color:var(--amber)}
+input[type=range]{accent-color:var(--amber);width:90px;vertical-align:middle}
+#panel{top:16px;right:16px;width:300px;background:#07080bcc;border:1px solid #1d1c19;border-radius:4px;padding:12px 14px;backdrop-filter:blur(4px)}
+#panel h2{margin:0 0 2px;font-size:10px;letter-spacing:.2em;color:var(--amber);font-weight:600}
+#panel .note{color:var(--faint);font-size:10.5px;margin-bottom:8px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px dashed #16150f}
+.row span:first-child{color:var(--dim)}
+.verdict{margin-top:8px;padding:7px 8px;background:#0e0f0b;border-left:2px solid var(--amber);min-height:44px}
+.verdict.truth{border-left-color:var(--teal)}
+.ok{color:var(--teal)}.bad{color:var(--rose)}.mute{color:var(--faint)}
+#panel .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--ink);background:var(--bg)}
+#mapwrap{left:20px;top:168px;display:none}
+#mapwrap .lbl{color:var(--dim);font-size:10px;letter-spacing:.14em;margin-bottom:4px}
+@media (max-width:760px){#panel{width:auto;left:12px;right:12px;top:auto;bottom:96px;max-height:42vh;overflow:auto}#title .sub{display:none}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="title" class="hud">
+  <h1>KERROSTUMA</h1>
+  <div class="sub">A planet whose present is a fossil of its past. Its cooling rate and its spin are hidden. The rock remembers both, and life grows on what the rock remembers.</div>
+  <div class="world" id="worldName">world —</div>
+  <div class="sub" id="hint" style="font-size:10.5px;color:var(--faint)">drag to orbit · wheel to zoom · click the planet to re-melt a patch and watch it re-cool</div>
+</div>
+
+<div id="mapwrap" class="hud"><div class="lbl" id="mapLbl">FLAT MAP · CRUST</div></div>
+
+<div id="panel" class="hud">
+  <h2>INSTRUMENTS</h2>
+  <div class="note">Everything below is measured from the rock and the life on it, never from the hidden law.</div>
+  <div class="row"><span>defects / 1000 area</span><span id="mDef">—</span></div>
+  <div class="row"><span>domain length ξ</span><span id="mXi">—</span></div>
+  <div class="row"><span>stripe coherence</span><span id="mCoh">—</span></div>
+  <div class="row"><span>chevron index χ</span><span id="mChi">—</span></div>
+  <div class="row"><span>life on fossils r</span><span id="mLife">—</span></div>
+  <div class="row"><span>same, shifted control</span><span id="mLifeS">—</span></div>
+  <div class="row"><span>pulses alive</span><span id="mPulse">—</span></div>
+  <div class="row"><span>last probe scar</span><span id="mProbe">none</span></div>
+  <div class="verdict" id="verdict"><span class="mute">The rock is still molten. Nothing can be read yet.</span></div>
+  <div class="btns">
+    <button id="bReveal">Reveal the hidden law</button>
+  </div>
+  <div class="verdict truth" id="truth" style="display:none"></div>
+</div>
+
+
+
+<div id="time" class="hud">
+  <div class="readout">
+    <span>deep time <b id="tNow">0</b></span>
+    <span>ε <b id="tEps">—</b></span>
+    <span>wind <b id="tWind">—</b></span>
+    <span id="tStage"><b>MOLTEN</b></span>
+    <span style="flex:1"></span>
+    <button id="bPause">pause</button>
+    <button id="bReplay">replay history</button>
+    <button id="bNew">new world</button>
+    <span>speed <input type="range" id="speed" min="-2" max="2" step="0.25" value="0"></span>
+    <select id="layer"><option value="0">planet</option><option value="1">planet + flat map</option></select>
+  </div>
+  <div class="bar"><i id="prog"></i></div>
+  <div class="stages"><span id="s0">MOLTEN</span><span id="s1">COOLING</span><span id="s2">AGEING</span><span id="s3">LIFE</span></div>
+</div>
+
+<div id="err"></div>
+
+<script src="core.js"></script>
+<script>
+'use strict';
+/* ============================================================================
+   Kerrostuma — the GPU half. Every simulation shader below mirrors a function in
+   core.js (Crust.step, laplace, Life.step, Life.field). The renderer only reads.
+   ========================================================================== */
+const $ = id => document.getElementById(id);
+const cvs = $('gl');
+const gl = cvs.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+function fail(msg) { const e = $('err'); e.style.display = 'flex'; e.innerHTML = msg; throw new Error(msg); }
+if (!gl) fail('This needs WebGL2.');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('This needs WebGL2 float render targets (EXT_color_buffer_float).');
+gl.getExtension('EXT_float_blend');
+
+const G = KER.makeGeom({});           // 352 × 136 torus, R ≈ 50.4, r ≈ 19.5 (Swift–Hohenberg units)
+const NU = G.Nu, NV = G.Nv;
+const AW = 160, AH = 128, NA = AW * AH; // 20 480 carriers
+
+// ------------------------------------------------------------------ GL helpers
+function sh(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(src.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n')); fail('Shader error: ' + gl.getShaderInfoLog(s)); }
+  return s;
+}
+function prog(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail('Link error: ' + gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace('[0]', '')] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+function tex(w, h, ifmt, fmt, type, data = null) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, fmt, type, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return t;
+}
+function fbo(t) { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+function target(w, h, ifmt, fmt, type) { const t = tex(w, h, ifmt, fmt, type); return { t, f: fbo(t), w, h }; }
+function bindTex(unit, t, loc) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); }
+const vao = gl.createVertexArray();
+const QUAD_VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+function drawTo(t, P) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.f); gl.viewport(0, 0, t.w, t.h); gl.useProgram(P.p); gl.bindVertexArray(vao); }
+function quad() { gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+// ------------------------------------------------------------------ shared GLSL
+const COMMON = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+uniform int uNu, uNv;
+uniform float uDu, uDv, uR, ur;
+/* hash3 — identical to KER.hash3 in core.js */
+float hash3(int i, int j, int k){
+  uint x = (uint(i)*73856093u) ^ (uint(j)*19349663u) ^ (uint(k)*83492791u);
+  x = (x ^ (x>>16u)) * 0x7feb352du;
+  x = (x ^ (x>>15u)) * 0x846ca68bu;
+  x = x ^ (x>>16u);
+  return float(x)/4294967296.0*2.0-1.0;
+}
+ivec2 wrap(ivec2 c){ return ivec2((c.x%uNu+uNu)%uNu, (c.y%uNv+uNv)%uNv); }
+float h_(float j){ return uR + ur*cos(j*uDv); }
+float sstep(float a,float b,float x){ float t=clamp((x-a)/(b-a),0.0,1.0); return t*t*(3.0-2.0*t); }
+`;
+
+/* KER.laplace */
+const LAP_FS = COMMON + `
+uniform sampler2D uSrc; out vec4 o;
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy); float j = float(c.y);
+  float h = h_(j), hp = h_(j+0.5), hm = h_(j-0.5);
+  float iu2 = 1.0/(uDu*uDu), ir2v = 1.0/(ur*ur*uDv*uDv);
+  float s  = texelFetch(uSrc, c, 0).r;
+  float e  = texelFetch(uSrc, wrap(c+ivec2(1,0)),0).r, w = texelFetch(uSrc, wrap(c-ivec2(1,0)),0).r;
+  float n  = texelFetch(uSrc, wrap(c+ivec2(0,1)),0).r, so = texelFetch(uSrc, wrap(c-ivec2(0,1)),0).r;
+  float L = iu2/(h*h)*(e+w-2.0*s) + hp/h*ir2v*(n-s) - hm/h*ir2v*(s-so);
+  o = vec4(L,0,0,1);
+}`;
+
+/* KER.Crust.step */
+const SH_FS = COMMON + `
+uniform sampler2D uPsi, uL1, uProbe; out vec4 o;
+uniform float uDt, uEps, uWind, uNamp, uT, uPTau, uEps0, uEpsF;
+uniform int uStep, uSeed, uNoisy;
+float lapAt(ivec2 c){
+  float j = float(c.y), h = h_(j), hp = h_(j+0.5), hm = h_(j-0.5);
+  float iu2 = 1.0/(uDu*uDu), ir2v = 1.0/(ur*ur*uDv*uDv);
+  float s = texelFetch(uL1, c, 0).r;
+  float e = texelFetch(uL1, wrap(c+ivec2(1,0)),0).r, w = texelFetch(uL1, wrap(c-ivec2(1,0)),0).r;
+  float n = texelFetch(uL1, wrap(c+ivec2(0,1)),0).r, so = texelFetch(uL1, wrap(c-ivec2(0,1)),0).r;
+  return iu2/(h*h)*(e+w-2.0*s) + hp/h*ir2v*(n-s) - hm/h*ir2v*(s-so);
+}
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy); float j = float(c.y);
+  int k = c.y*uNu + c.x;
+  float p = texelFetch(uPsi, c, 0).r;
+  vec2 pr = texelFetch(uProbe, c, 0).rg;
+  float e = uEps;
+  if (pr.x > 0.0) { float s = (uT - pr.y)/uPTau; float ep = uEps0 + (uEpsF-uEps0)*clamp(s,0.0,1.0); e += (ep-e)*pr.x; }
+  float f = (e-1.0)*p - 2.0*texelFetch(uL1,c,0).r - lapAt(c) - p*p*p;
+  float adv = uWind*sin(j*uDv)/(2.0*h_(j)*uDu);
+  f -= adv*(texelFetch(uPsi, wrap(c+ivec2(1,0)),0).r - texelFetch(uPsi, wrap(c-ivec2(1,0)),0).r);
+  float np = p + uDt*f;
+  if (uNoisy==1 || (pr.x>0.0 && uT-pr.y < 0.6*uPTau)) np += uNamp*hash3(k, uStep, uSeed);
+  o = vec4(np,0,0,1);
+}`;
+
+/* KER.Life.step — carriers (one texel each: u, v, heading) */
+const AGENT_FS = COMMON + `
+uniform sampler2D uA, uLife, uNut; out vec4 o;
+uniform int uAW, uTick, uSeed;
+uniform float uSd, uSa, uRa, uStepL, uWFood, uWGel, uWRef, uTSat;
+float samp(int ch, float u, float v){
+  int i = int(floor(u/uDu)); int j = int(floor(v/uDv));
+  ivec2 c = wrap(ivec2(i,j));
+  if (ch==1) return texelFetch(uNut, c, 0).r;
+  vec4 L = texelFetch(uLife, c, 0);
+  float q = L.r/uTSat;
+  return L.r/(1.0+q*q) + uWGel*L.g - uWRef*L.a;
+}
+float sense(float u, float v, float hd){
+  float h = uR + ur*cos(v);
+  float su = u + uSd*cos(hd)/h, sv = v + uSd*sin(hd)/ur;
+  return samp(0,su,sv) + uWFood*samp(1,su,sv);
+}
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy); int n = c.y*uAW + c.x;
+  vec4 a = texelFetch(uA, c, 0);
+  float u = a.x, v = a.y, hd = a.z;
+  float f = sense(u,v,hd), l = sense(u,v,hd+uSa), r = sense(u,v,hd-uSa);
+  float jit = hash3(n, uTick, uSeed);
+  if (f>=l && f>=r) hd += 0.1*uRa*jit; else if (l>r) hd += uRa; else hd -= uRa;
+  float h = uR + ur*cos(v);
+  u += uStepL*cos(hd)/h; v += uStepL*sin(hd)/ur;
+  const float TAU = 6.283185307179586;
+  u = mod(mod(u,TAU)+TAU,TAU); v = mod(mod(v,TAU)+TAU,TAU);
+  o = vec4(u, v, hd, 1.0);
+}`;
+const DEPOSIT_VS = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+uniform sampler2D uA; uniform int uAW, uNu, uNv; uniform float uDu, uDv;
+void main(){
+  ivec2 c = ivec2(gl_VertexID % uAW, gl_VertexID / uAW);
+  vec4 a = texelFetch(uA, c, 0);
+  float i = float(int(floor(a.x/uDu)) % uNu), j = float(int(floor(a.y/uDv)) % uNv);
+  gl_Position = vec4((i+0.5)/float(uNu)*2.0-1.0, (j+0.5)/float(uNv)*2.0-1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}`;
+const DEPOSIT_FS = `#version 300 es
+precision highp float; uniform float uDep; out vec4 o; void main(){ o = vec4(uDep,0,0,1); }`;
+
+/* KER.Life.field — trail, gel, excitation */
+const FIELD_FS = COMMON + `
+uniform sampler2D uLife, uDepT, uFood, uNut;
+layout(location=0) out vec4 o; layout(location=1) out vec4 o2;
+uniform int uTick, uSeed; uniform float uRegrow, uEat;
+uniform float uTCap, uDecay, uDiff, uGelGrow, uGelTh, uGelDecay, uExK, uExD, uRecov, uSpark, uRefr;
+float Kc(float a, float b){ float ka = 0.02+sstep(0.05,0.35,a), kb = 0.02+sstep(0.05,0.35,b); return 2.0*ka*kb/(ka+kb); }
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy); int k = c.y*uNu + c.x;
+  vec4 C = texelFetch(uLife, c, 0);
+  vec4 E = texelFetch(uLife, wrap(c+ivec2(1,0)),0), W = texelFetch(uLife, wrap(c-ivec2(1,0)),0);
+  vec4 N = texelFetch(uLife, wrap(c+ivec2(0,1)),0), S = texelFetch(uLife, wrap(c-ivec2(0,1)),0);
+  float F = texelFetch(uFood, c, 0).r;
+  float dep = texelFetch(uDepT, c, 0).r;
+  float hj = h_(float(c.y));
+  float ku = min(0.24, uExD*(uR/hj)*(uR/hj)), kv = uExD;
+  float T = C.r, m = C.g, U = C.b, V = C.a;
+  float Nn = texelFetch(uNut, c, 0).r;
+  o2 = vec4(clamp(Nn + uRegrow*(F-Nn) - uEat*min(T,uTCap)/uTCap*Nn, 0.0, 1.0), 0, 0, 1);
+  float lapT = E.r + W.r + N.r + S.r - 4.0*T;
+  float T2 = min(uTCap, uDecay*(T + uDiff*0.25*lapT) + dep);
+  float M2 = clamp(m + uGelGrow*max(T-uGelTh,0.0)/(1.0+T)*(1.0-m)*(0.3+F) - uGelDecay*m, 0.0, 1.0);
+  float g = sstep(0.05,0.35,m);
+  float flux = ku*(Kc(m,E.g)*(E.b-U) + Kc(m,W.g)*(W.b-U)) + kv*(Kc(m,N.g)*(N.b-U) + Kc(m,S.g)*(S.b-U));
+  float th = 0.12 + uRefr*V + 0.45*(1.0-g);
+  float nu = U + uExK*U*(1.0-U)*(U-th) + flux;
+  if (g>0.5 && F>0.4 && V<0.05 && 0.5+0.5*hash3(k, uTick, uSeed+7) < uSpark) nu = 1.0;
+  o = vec4(T2, M2, clamp(nu,0.0,1.0), clamp(V + uRecov*(U-V), 0.0, 1.0));
+}`;
+
+/* The renderer: a ray-marched torus planet whose relief and colour are the fields above,
+   a crystal moon whose mass bends light (the AnttisBrain move), and stars. */
+const RENDER_FS = COMMON + `
+uniform sampler2D uPsi, uLife, uFood, uProbe;
+uniform vec2 uRes; uniform float uTime, uT, uEps, uEps0, uEpsF, uPTau, uHue, uLifeOn, uLens, uGain;
+uniform vec3 camP, camR, camU, camF, sunD, moonP;
+uniform int uMap; uniform vec4 uMapRect;
+out vec4 o;
+const float PI = 3.141592653589793, TAU = 6.283185307179586;
+float RW, rw;                    // world radii: R = 1
+vec4 fetchB(sampler2D s, vec2 uv){ /* manual bilinear with wrap, uv in cells */
+  vec2 g = uv - 0.5; ivec2 i0 = ivec2(floor(g)); vec2 f = fract(g);
+  vec4 a = texelFetch(s, wrap(i0),0), b = texelFetch(s, wrap(i0+ivec2(1,0)),0);
+  vec4 c = texelFetch(s, wrap(i0+ivec2(0,1)),0), d = texelFetch(s, wrap(i0+ivec2(1,1)),0);
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+vec2 uvOf(vec3 p){
+  float u = atan(p.z, p.x); if (u<0.0) u += TAU;
+  vec2 q = vec2(length(p.xz)-RW, p.y);
+  float v = atan(q.y, q.x); if (v<0.0) v += TAU;
+  return vec2(u/uDu, v/uDv);
+}
+float relief(vec2 c){
+  float psi = fetchB(uPsi, c).r;
+  float m = uLifeOn>0.5 ? fetchB(uLife, c).g : 0.0;
+  return 0.0075*psi + 0.004*m;
+}
+float sdPlanet(vec3 p){
+  vec2 q = vec2(length(p.xz)-RW, p.y);
+  float base = length(q) - rw;
+  if (base > 0.05) return base - 0.012;
+  return (base - relief(uvOf(p)))*0.65;
+}
+vec3 nPlanet(vec3 p){
+  const vec2 e = vec2(0.0012,-0.0012);
+  return normalize(e.xyy*sdPlanet(p+e.xyy)+e.yyx*sdPlanet(p+e.yyx)+e.yxy*sdPlanet(p+e.yxy)+e.xxx*sdPlanet(p+e.xxx));
+}
+vec3 pal(float t){ return 0.5+0.5*cos(TAU*(vec3(0.0,0.33,0.67)+t)); }
+float epsLocal(vec2 c){
+  vec2 pr = fetchB(uProbe, c).rg; float e = uEps;
+  if (pr.x>0.0){ float s=(uT-pr.y)/uPTau; float ep=uEps0+(uEpsF-uEps0)*clamp(s,0.0,1.0); e += (ep-e)*pr.x; }
+  return e;
+}
+/* surface: albedo and emission at cell coords c */
+void surface(vec2 c, out vec3 alb, out vec3 emi){
+  float psi = fetchB(uPsi, c).r*uGain;   /* exposure only: the relief always uses the true ψ */
+  float e = epsLocal(c);
+  vec3 ridge = mix(vec3(0.80,0.74,0.62), pal(uHue+0.08)*0.8+0.2, 0.30);
+  vec3 trough = mix(vec3(0.035,0.03,0.04), pal(uHue+0.55)*0.12, 0.6);
+  float s = smoothstep(-0.5, 0.5, psi);
+  alb = mix(trough, ridge, s*s*(3.0-2.0*s));
+  // molten: hot where ε < 0, cooling glow as it crosses
+  float heat = clamp(-e*4.0, 0.0, 1.0);
+  float glow = heat + 0.35*clamp(1.0-e*8.0,0.0,1.0)*(1.0-heat);
+  vec3 lava = mix(vec3(0.9,0.18,0.03), vec3(1.0,0.75,0.35), 0.5+0.5*sin(uTime*0.7 + c.x*0.07 + c.y*0.11));
+  emi = lava*glow*glow*(0.6+0.8*heat);
+  alb = mix(alb, vec3(0.05,0.02,0.02), heat);
+  float F = fetchB(uFood, c).r;
+  emi += vec3(1.0,0.45,0.12)*F*F*0.22*(1.0-heat)*(1.0-uLifeOn*0.6);
+  if (uLifeOn>0.5){
+    vec4 L = fetchB(uLife, c);
+    float g = smoothstep(0.05, 0.45, L.g);
+    alb = mix(alb, vec3(0.05,0.32,0.30), g*0.85);
+    emi += vec3(0.10,0.55,0.48)*g*0.10 + vec3(0.05,0.30,0.25)*smoothstep(0.6,3.0,L.r)*0.15;
+    emi += vec3(0.55,1.0,0.95)*L.b*1.6;
+  }
+}
+vec3 stars(vec3 d){
+  vec3 col = vec3(0.0);
+  vec3 a = abs(d); vec2 uv; float face;
+  if (a.x>a.y && a.x>a.z){ uv=d.yz/a.x; face=sign(d.x); } else if (a.y>a.z){ uv=d.xz/a.y; face=2.0+sign(d.y);} else { uv=d.xy/a.z; face=4.0+sign(d.z); }
+  vec2 g = uv*180.0; vec2 id = floor(g);
+  float hsh = 0.5+0.5*hash3(int(id.x)+500, int(id.y)+500, int(face*7.0)+3);
+  if (hsh > 0.985){ vec2 f = fract(g)-0.5; float s = exp(-dot(f,f)*40.0); col += s*mix(vec3(0.7,0.8,1.0), vec3(1.0,0.85,0.6), fract(hsh*91.0))*(hsh-0.985)*90.0; }
+  float neb = 0.5+0.5*sin(d.x*3.1+sin(d.y*4.3)+d.z*2.0);
+  col += pal(uHue+0.6)*0.025*neb*neb + vec3(0.01,0.012,0.02);
+  return col;
+}
+void main(){
+  RW = 1.0; rw = ur/uR;
+  vec2 fc = gl_FragCoord.xy;
+  if (uMap==1 && fc.x>uMapRect.x && fc.x<uMapRect.x+uMapRect.z && fc.y>uMapRect.y && fc.y<uMapRect.y+uMapRect.w){
+    vec2 m = (fc-uMapRect.xy)/uMapRect.zw;
+    vec2 c = m*vec2(float(uNu), float(uNv));
+    vec3 alb, emi; surface(c, alb, emi);
+    o = vec4(pow(alb*0.9+emi, vec3(0.4545)), 1.0); return;
+  }
+  vec2 uv = (fc - 0.5*uRes)/uRes.y;
+  vec3 rd = normalize(uv.x*camR + uv.y*camU + 1.6*camF);
+  vec3 x = camP;
+  vec3 col = vec3(0.0); float trav = 0.0; bool hit = false; float minD = 1e9;
+  float moonR = 0.17;
+  for (int i=0; i<220; i++){
+    // lensing: the moon's mass bends the ray, dθ ≈ ∇Φ ds
+    vec3 dm = moonP - x; float r2 = dot(dm,dm);
+    float dPl = sdPlanet(x);
+    float dMo = sqrt(r2) - moonR;
+    float stp = max(min(dPl, dMo)*0.9, 0.0015);
+    if (uLens>0.0) rd = normalize(rd + dm*inversesqrt(r2)*(uLens*min(stp,0.25)/(r2+0.02)));
+    // atmosphere glow: closeness to the planet surface along the ray
+    minD = min(minD, dPl);
+    if (dPl < 0.0006){
+      vec2 c = uvOf(x);
+      vec3 n = nPlanet(x);
+      vec3 alb, emi; surface(c, alb, emi);
+      float ndl = dot(n, sunD);
+      float dif = max(ndl, 0.0);
+      vec3 tubeN = normalize(x - vec3(normalize(vec2(x.x,x.z)).x, 0.0, normalize(vec2(x.x,x.z)).y));
+      float term = smoothstep(-0.12, 0.2, dot(tubeN, sunD));
+      vec3 hv = normalize(sunD - rd); float spec = pow(max(dot(n,hv),0.0), 40.0)*0.25;
+      // self-shadow of the ring: march toward the sun a little
+      float sh = 1.0; vec3 y = x + n*0.004;
+      for (int k=0;k<36;k++){ float d = sdPlanet(y); if (d<0.0005){ sh=0.0; break;} y += sunD*max(d,0.01); if (length(y)>4.0) break; }
+      float ao = mix(0.55, 1.0, smoothstep(-0.6, 0.5, fetchB(uPsi, c).r*uGain));
+      vec3 lit = alb*ao*(dif*sh*term*vec3(1.0,0.94,0.84)*1.5 + vec3(0.018,0.022,0.035)) + spec*sh*term;
+      float night = 1.0 - term*sh;
+      col = lit + emi*(0.45 + 1.1*night);
+      hit = true; break;
+    }
+    if (dMo < 0.0008){
+      vec3 n = normalize(x - moonP);
+      float fr = 0.04 + 0.96*pow(1.0-max(dot(-rd,n),0.0), 5.0);
+      vec3 refl = stars(reflect(rd,n));
+      float dif = clamp(dot(n,sunD),0.0,1.0);
+      vec3 q = n*9.0; float facet = 0.5+0.5*sin(q.x+sin(q.y*1.7)+q.z*1.3)*sin(q.y*1.1-q.z);
+      vec3 core = mix(pal(uHue+0.3)*0.35, vec3(0.95,0.92,0.85), 0.35+0.3*facet);
+      col = core*(0.06 + 0.8*dif) + refl*fr*1.5 + pal(uHue+0.62)*pow(1.0-abs(dot(rd,n)),3.0)*0.35;
+      hit = true; break;
+    }
+    x += rd*stp; trav += stp;
+    if (trav > 14.0) break;
+  }
+  vec3 sky = pal(uHue+0.62);
+  if (!hit) col = stars(rd) + sky*0.5*exp(-max(minD,0.0)*55.0);
+  else col += sky*0.05;
+  col = col/(1.0+col);
+  col = pow(col, vec3(0.4545));
+  col *= 1.0 - 0.25*dot(uv,uv);
+  o = vec4(col, 1.0);
+}`;
+
+const P_LAP = prog(QUAD_VS, LAP_FS), P_SH = prog(QUAD_VS, SH_FS), P_AG = prog(QUAD_VS, AGENT_FS);
+const P_DEP = prog(DEPOSIT_VS, DEPOSIT_FS), P_FIELD = prog(QUAD_VS, FIELD_FS), P_REN = prog(QUAD_VS, RENDER_FS);
+
+function setGeom(P) {
+  gl.useProgram(P.p);
+  if (P.u.uNu) gl.uniform1i(P.u.uNu, NU); if (P.u.uNv) gl.uniform1i(P.u.uNv, NV);
+  if (P.u.uDu) gl.uniform1f(P.u.uDu, G.du); if (P.u.uDv) gl.uniform1f(P.u.uDv, G.dv);
+  if (P.u.uR) gl.uniform1f(P.u.uR, G.R); if (P.u.ur) gl.uniform1f(P.u.ur, G.r);
+}
+[P_LAP, P_SH, P_AG, P_DEP, P_FIELD, P_REN].forEach(setGeom);
+
+// ------------------------------------------------------------------ state
+const R32 = [gl.R32F, gl.RED, gl.FLOAT], RG32 = [gl.RG32F, gl.RG, gl.FLOAT], RGBA32 = [gl.RGBA32F, gl.RGBA, gl.FLOAT];
+const psiT = [target(NU, NV, ...R32), target(NU, NV, ...R32)];
+const lapT = target(NU, NV, ...R32);
+const probeTex = tex(NU, NV, ...RG32);
+const foodTex = tex(NU, NV, ...R32);
+function mrt() {
+  const t0 = tex(NU, NV, ...RGBA32), t1 = tex(NU, NV, ...R32);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t0, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, t1, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  return { t: t0, nut: t1, f, w: NU, h: NV, mrt: true };
+}
+const lifeT = [mrt(), mrt()];
+const depT = target(NU, NV, ...RGBA32);
+const agT = [target(AW, AH, ...RGBA32), target(AW, AH, ...RGBA32)];
+
+const S = {
+  seed: 1, L: null, t: 0, step: 0, cur: 0, lifeCur: 0, agCur: 0, tick: 0,
+  lifeOn: false, frozen: false, scarUntil: -1, paused: false,
+  probeMask: new Float32Array(NU * NV), probeT0: new Float32Array(NU * NV), probes: [],
+  census: null, lastCensus: 0, lastFood: 0, lastGain: 0, gain: 1, revealed: false, food: new Float32Array(NU * NV),
+};
+const PT = 15; // probe re-cooling time (same as KER.Crust.pTau)
+
+function uploadR(t, data) { gl.bindTexture(gl.TEXTURE_2D, t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RED, gl.FLOAT, data); }
+function uploadProbe() {
+  const d = new Float32Array(NU * NV * 2);
+  for (let k = 0; k < NU * NV; k++) { d[2 * k] = S.probeMask[k]; d[2 * k + 1] = S.probeT0[k]; }
+  gl.bindTexture(gl.TEXTURE_2D, probeTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RG, gl.FLOAT, d);
+}
+function clearTarget(t) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.f); gl.viewport(0, 0, t.w, t.h);
+  if (t.mrt) { gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]); }
+  else { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+}
+
+function newWorld(seed) {
+  S.seed = seed; S.L = KER.law(seed);
+  S.t = 0; S.step = 0; S.cur = 0; S.tick = 0; S.lifeOn = false; S.frozen = false; S.scarUntil = -1;
+  S.census = null; S.revealed = false; S.probes = []; S.gain = 1;
+  S.probeMask.fill(0); S.probeT0.fill(0); uploadProbe();
+  // identical initial condition to KER.Crust
+  const psi0 = new Float32Array(NU * NV);
+  for (let k = 0; k < NU * NV; k++) psi0[k] = 1e-3 * KER.hash3(k, seed, 1);
+  gl.bindTexture(gl.TEXTURE_2D, psiT[0].t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RED, gl.FLOAT, psi0);
+  S.food.fill(0); uploadR(foodTex, S.food);
+  clearTarget(lifeT[0]); clearTarget(lifeT[1]);
+  $('worldName').textContent = 'world #' + seed;
+  $('truth').style.display = 'none';
+  $('verdict').innerHTML = '<span class="mute">The rock is still molten. Nothing can be read yet.</span>';
+  $('mProbe').textContent = 'none';
+  ['mDef', 'mXi', 'mCoh', 'mChi', 'mLife', 'mLifeS', 'mPulse'].forEach(id => $(id).textContent = '—');
+  try { history.replaceState(null, '', '#' + seed); } catch (e) {}
+}
+
+// ------------------------------------------------------------------ simulation steps
+function crustStep() {
+  const L = S.L;
+  // pass 1: ∇²ψ
+  drawTo(lapT, P_LAP); bindTex(0, psiT[S.cur].t, P_LAP.u.uSrc); quad();
+  // pass 2: ψ ← ψ + dt [ (ε−1)ψ − 2∇²ψ − ∇⁴ψ − ψ³ − U ∂sψ ] + noise
+  const nxt = 1 - S.cur;
+  drawTo(psiT[nxt], P_SH);
+  bindTex(0, psiT[S.cur].t, P_SH.u.uPsi); bindTex(1, lapT.t, P_SH.u.uL1); bindTex(2, probeTex, P_SH.u.uProbe);
+  const u = P_SH.u;
+  gl.uniform1f(u.uDt, G.dt); gl.uniform1f(u.uEps, KER.epsAt(L, S.t)); gl.uniform1f(u.uWind, KER.windAt(L, S.t, G.r));
+  gl.uniform1f(u.uNamp, L.noise * Math.sqrt(G.dt)); gl.uniform1f(u.uT, S.t); gl.uniform1f(u.uPTau, PT);
+  gl.uniform1f(u.uEps0, L.eps0); gl.uniform1f(u.uEpsF, L.epsF);
+  gl.uniform1i(u.uStep, S.step); gl.uniform1i(u.uSeed, L.seed); gl.uniform1i(u.uNoisy, S.t < L.noiseUntil * L.tauQ ? 1 : 0);
+  quad();
+  S.cur = nxt; S.step++; S.t += G.dt;
+}
+function lifeTick() {
+  const P = KER.LIFE;
+  // carriers
+  const an = 1 - S.agCur;
+  drawTo(agT[an], P_AG);
+  bindTex(0, agT[S.agCur].t, P_AG.u.uA); bindTex(1, lifeT[S.lifeCur].t, P_AG.u.uLife); bindTex(2, lifeT[S.lifeCur].nut, P_AG.u.uNut);
+  gl.uniform1i(P_AG.u.uAW, AW); gl.uniform1i(P_AG.u.uTick, S.tick); gl.uniform1i(P_AG.u.uSeed, S.seed);
+  gl.uniform1f(P_AG.u.uSd, P.sd); gl.uniform1f(P_AG.u.uSa, P.sa); gl.uniform1f(P_AG.u.uRa, P.ra); gl.uniform1f(P_AG.u.uStepL, P.step);
+  gl.uniform1f(P_AG.u.uWFood, P.wFood); gl.uniform1f(P_AG.u.uWGel, P.wGel); gl.uniform1f(P_AG.u.uWRef, P.wRef); gl.uniform1f(P_AG.u.uTSat, P.tSat);
+  quad(); S.agCur = an;
+  // deposit
+  clearTarget(depT);
+  gl.useProgram(P_DEP.p); gl.bindVertexArray(vao);
+  bindTex(0, agT[S.agCur].t, P_DEP.u.uA); gl.uniform1i(P_DEP.u.uAW, AW); gl.uniform1f(P_DEP.u.uDep, P.deposit);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.drawArrays(gl.POINTS, 0, NA); gl.disable(gl.BLEND);
+  // trail, gel, excitation
+  const ln = 1 - S.lifeCur;
+  drawTo(lifeT[ln], P_FIELD);
+  bindTex(0, lifeT[S.lifeCur].t, P_FIELD.u.uLife); bindTex(1, depT.t, P_FIELD.u.uDepT); bindTex(2, foodTex, P_FIELD.u.uFood); bindTex(3, lifeT[S.lifeCur].nut, P_FIELD.u.uNut);
+  const u = P_FIELD.u;
+  gl.uniform1i(u.uTick, S.tick); gl.uniform1i(u.uSeed, S.seed); gl.uniform1f(u.uRegrow, P.regrow); gl.uniform1f(u.uEat, P.eat);
+  gl.uniform1f(u.uTCap, P.tCap); gl.uniform1f(u.uDecay, P.decay); gl.uniform1f(u.uDiff, P.diff); gl.uniform1f(u.uGelGrow, P.gelGrow); gl.uniform1f(u.uGelTh, P.gelTh);
+  gl.uniform1f(u.uGelDecay, P.gelDecay); gl.uniform1f(u.uExK, P.exK); gl.uniform1f(u.uExD, P.exD); gl.uniform1f(u.uRecov, P.recov); gl.uniform1f(u.uSpark, P.spark); gl.uniform1f(u.uRefr, P.refr);
+  quad(); S.lifeCur = ln; S.tick++;
+}
+
+// ------------------------------------------------------------------ readback + instruments
+const rbuf = new Float32Array(NU * NV * 4);
+function readTarget(t) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.f); gl.readBuffer(gl.COLOR_ATTACHMENT0); gl.readPixels(0, 0, NU, NV, gl.RGBA, gl.FLOAT, rbuf); return rbuf; }
+function readPsi() { const b = readTarget(psiT[S.cur]); const p = new Float32Array(NU * NV); for (let k = 0; k < NU * NV; k++) p[k] = b[4 * k]; return p; }
+function readLife() { const b = readTarget(lifeT[S.lifeCur]); const M = new Float32Array(NU * NV), U = new Float32Array(NU * NV); for (let k = 0; k < NU * NV; k++) { M[k] = b[4 * k + 1]; U[k] = b[4 * k + 2]; } return { M, U }; }
+function refreshFood() { S.psiNow = readPsi(); S.food = KER.frustration(G, S.psiNow); uploadR(foodTex, S.food); }
+
+function startLife() {
+  refreshFood();
+  const life = new KER.Life(G, S.food, NA, S.seed);       // only for the carriers' birthplaces (∝ F²)
+  const a = new Float32Array(NA * 4);
+  for (let n = 0; n < NA; n++) { a[4 * n] = life.a[3 * n]; a[4 * n + 1] = life.a[3 * n + 1]; a[4 * n + 2] = life.a[3 * n + 2]; a[4 * n + 3] = 1; }
+  gl.bindTexture(gl.TEXTURE_2D, agT[0].t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, AW, AH, gl.RGBA, gl.FLOAT, a);
+  S.agCur = 0; S.lifeCur = 0; clearTarget(lifeT[0]); clearTarget(lifeT[1]);
+  for (const L of lifeT) { gl.bindTexture(gl.TEXTURE_2D, L.nut); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RED, gl.FLOAT, S.food); }
+  S.lifeOn = true; S.tick = 0;
+}
+
+/* Embedded copy of calibration.json (so the page also works from file://); the fetched file wins if present. */
+let CALIB = { feature: 'defects', threshold: 2.524, chiNull: 0.107 };
+fetch('calibration.json').then(r => r.ok ? r.json() : null).then(j => { if (j) CALIB = j; }).catch(() => {});
+
+function fmt(x, d = 2) { return x == null || !isFinite(x) ? '—' : x.toFixed(d); }
+function measure() {
+  const psi = readPsi(); S.psiNow = psi;
+  const c = KER.census(G, psi);
+  S.census = c;
+  $('mDef').textContent = fmt(c.defects.perArea, 2) + '  (' + c.defects.count + ')';
+  $('mXi').textContent = fmt(c.xi, 1);
+  $('mCoh').textContent = fmt(c.coh, 3);
+  const band = CALIB && CALIB.chiNull ? CALIB.chiNull : null;
+  $('mChi').textContent = fmt(c.chi, 3) + (band ? '  (null ±' + band.toFixed(2) + ')' : '');
+  if (S.lifeOn) {
+    const { M, U } = readLife();
+    const lf = KER.lifeOnFossils(G, M, c.F);
+    let pulses = 0; for (let k = 0; k < M.length; k++) if (U[k] > 0.5) pulses++;
+    let gel = 0; for (let k = 0; k < M.length; k++) if (M[k] > 0.3) gel++;
+    $('mLife').innerHTML = gel > 200 ? '<span class="' + (lf.r > lf.rShift + 0.05 ? 'ok' : '') + '">' + fmt(lf.r, 3) + '</span>' : '<span class="mute">growing…</span>';
+    $('mLifeS').textContent = gel > 200 ? fmt(lf.rShift, 3) : '—';
+    $('mPulse').textContent = pulses + ' cells lit';
+    S.lifeStat = lf;
+  }
+  // probe scars: compare defect density inside the latest scar with an equal ring outside it
+  if (S.probes.length) {
+    const pb = S.probes[S.probes.length - 1];
+    if (S.t > pb.t0 + PT + 30) {
+      let inD = 0, inA = 0, outD = 0, outA = 0;
+      for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+        const d = KER.physDist(G, pb.i, pb.j, i, j); const k = j * NU + i; const w = G.h[j];
+        if (d < 0.65 * pb.rad) { inD += w * (c.F[k] > 0.5); inA += w; } else if (d > 1.15 * pb.rad && d < 1.6 * pb.rad) { outD += w * (c.F[k] > 0.5); outA += w; }
+      }
+      const fi = inD / Math.max(inA, 1), fo = outD / Math.max(outA, 1);
+      $('mProbe').innerHTML = 'broken rock ' + (100 * fi).toFixed(1) + '% inside vs ' + (100 * fo).toFixed(1) + '% around';
+    } else $('mProbe').textContent = 're-cooling…';
+  }
+  verdict();
+}
+function verdict() {
+  const c = S.census; if (!c) return;
+  const L = S.L; const present = S.t >= L.tauQ + L.age;
+  if (!present) { $('verdict').innerHTML = '<span class="mute">The crust is still forming. A reading now would measure the process, not the record.</span>'; return; }
+  const R = KER.readPlanet(c, CALIB);
+  let s = '';
+  if (R.cool) s += 'Cooling: the crust reads as <b>' + R.cool + '</b> ' + (R.cool === 'fast' ? '(broken, many defects)' : '(calm, few defects)') + '<br>';
+  else s += 'Cooling: <span class="mute">no calibration loaded</span><br>';
+  s += R.spin === 0 ? 'Spin: <span class="mute">unreadable, |χ| inside the no-wind band</span>' : 'Spin: the chevrons say <b>' + (R.spin > 0 ? 'prograde (+)' : 'retrograde (−)') + '</b>';
+  $('verdict').innerHTML = s;
+  if (S.revealed) reveal();
+}
+function reveal() {
+  S.revealed = true;
+  const L = S.L, c = S.census; const el = $('truth'); el.style.display = 'block';
+  let s = 'Hidden law: τ<sub>Q</sub> = <b>' + L.tauQ.toFixed(0) + '</b>, spin <b>' + (L.spin > 0 ? '+' : '−') + '</b>, wind ' + L.wind.toFixed(2);
+  if (c && S.t >= L.tauQ + L.age) {
+    const R = KER.readPlanet(c, CALIB);
+    if (R.cool) s += '<br>cooling class: true <b>' + KER.trueCool(L) + '</b>, read <b>' + R.cool + '</b> ' + (R.cool === KER.trueCool(L) ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>');
+    s += '<br>spin ' + (R.spin === 0 ? '<span class="mute">not claimed</span>' : R.spin === L.spin ? '<span class="ok">✓ read correctly</span>' : '<span class="bad">✗ misread</span>');
+  }
+  el.innerHTML = s;
+}
+
+// ------------------------------------------------------------------ camera
+const cam = { yaw: 0.6, pitch: 0.55, dist: 4.4, auto: true };
+let drag = null;
+cvs.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; cvs.setPointerCapture(e.pointerId); });
+cvs.addEventListener('pointermove', e => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy);
+  cam.yaw -= dx * 0.005; cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + dy * 0.005)); drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.moved > 6) cam.auto = false;
+});
+cvs.addEventListener('pointerup', e => { if (drag && drag.moved < 6) pick(e); drag = null; });
+cvs.addEventListener('wheel', e => { e.preventDefault(); cam.dist = Math.max(1.25, Math.min(7, cam.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+function camBasis() {
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const P = [cam.dist * cp * Math.cos(cam.yaw), cam.dist * sp, cam.dist * cp * Math.sin(cam.yaw)];
+  const F = [-P[0], -P[1], -P[2]].map(v => v / cam.dist);
+  let Rr = [F[2], 0, -F[0]]; const rl = Math.hypot(...Rr); Rr = Rr.map(v => -v / rl);
+  const U = [Rr[1] * F[2] - Rr[2] * F[1], Rr[2] * F[0] - Rr[0] * F[2], Rr[0] * F[1] - Rr[1] * F[0]];
+  return { P, F, R: Rr, U };
+}
+/** Click → ray → analytic torus (no relief) → cell → re-melt there. */
+function pick(e) {
+  const rect = cvs.getBoundingClientRect(); const W = cvs.width, H = cvs.height;
+  const px = (e.clientX - rect.left) / rect.width * W, py = (1 - (e.clientY - rect.top) / rect.height) * H;
+  const B = camBasis(); const ux = (px - 0.5 * W) / H, uy = (py - 0.5 * H) / H;
+  let d = B.R.map((v, i) => ux * v + uy * B.U[i] + 1.6 * B.F[i]); const dl = Math.hypot(...d); d = d.map(v => v / dl);
+  const rw = G.r / G.R; let x = B.P.slice(), tr = 0;
+  for (let i = 0; i < 300; i++) {
+    const qx = Math.hypot(x[0], x[2]) - 1, sd = Math.hypot(qx, x[1]) - rw;
+    if (sd < 1e-4) {
+      let u = Math.atan2(x[2], x[0]); if (u < 0) u += 2 * Math.PI;
+      let v = Math.atan2(x[1], qx); if (v < 0) v += 2 * Math.PI;
+      probeAt(Math.floor(u / G.du), Math.floor(v / G.dv)); return;
+    }
+    x = x.map((v, k) => v + d[k] * sd); tr += sd; if (tr > 12) return;
+  }
+}
+function probeAt(ci, cj) {
+  if (S.t < S.L.tauQ) return; // nothing to re-melt yet
+  const rad = 14;
+  for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+    const dd = KER.physDist(G, ci, cj, i, j); const m = 1 - KER.smoothstep(0.7 * rad, rad, dd);
+    if (m <= 0) continue; const k = j * NU + i;
+    S.probeMask[k] = Math.max(S.probeMask[k], m); S.probeT0[k] = S.t;
+  }
+  uploadProbe();
+  // melt: ψ ← ψ (1 − m), same as KER.Crust.probe
+  const psi = readPsi();
+  for (let k = 0; k < NU * NV; k++) if (S.probeMask[k] > 0 && S.probeT0[k] === S.t) psi[k] *= (1 - S.probeMask[k]);
+  gl.bindTexture(gl.TEXTURE_2D, psiT[S.cur].t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RED, gl.FLOAT, psi);
+  S.probes.push({ i: ci, j: cj, t0: S.t, rad });
+  S.scarUntil = S.t + PT + 40; S.frozen = false;
+  $('mProbe').textContent = 're-melted, re-cooling…';
+}
+
+// ------------------------------------------------------------------ UI
+$('bPause').onclick = () => { S.paused = !S.paused; $('bPause').textContent = S.paused ? 'resume' : 'pause'; };
+$('bReplay').onclick = () => newWorld(S.seed);
+$('bNew').onclick = () => newWorld(1 + Math.floor(Math.random() * 99999));
+$('bReveal').onclick = () => reveal();
+$('layer').onchange = () => { $('mapwrap').style.display = $('layer').value === '1' ? 'block' : 'none'; };
+
+const QS = new URLSearchParams(location.search);
+const RSCALE = Math.max(0.2, Math.min(1, +(QS.get('scale') || 0.75)));
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.floor(innerWidth * dpr * RSCALE), h = Math.floor(innerHeight * dpr * RSCALE); // render scale keeps the march affordable
+  if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h; }
+}
+addEventListener('resize', resize); resize();
+
+// ------------------------------------------------------------------ main loop
+const FORM_SECONDS = 32;      // how long the deep history takes to watch at speed ×1
+let last = performance.now(), wall = 0;
+function stageOf() {
+  const L = S.L, tc = L.tauQ * (-L.eps0) / (L.epsF - L.eps0);
+  if (S.t < tc) return 0; if (S.t < L.tauQ) return 1; if (S.t < L.tauQ + L.age) return 2; return 3;
+}
+function frame(now) {
+  const dtw = Math.min(0.05, (now - last) / 1000); last = now; wall += dtw;
+  const L = S.L, Tpres = L.tauQ + L.age, spd = Math.pow(2, +$('speed').value);
+  if (!S.paused) {
+    if (S.t < Tpres) {
+      const per = Tpres / G.dt / (FORM_SECONDS * 60) * spd * (dtw * 60);
+      let n = Math.min(900, Math.max(1, Math.round(per)));
+      for (let i = 0; i < n && S.t < Tpres; i++) crustStep();
+      if (S.t >= Tpres) { measure(); startLife(); }
+    } else {
+      if (S.scarUntil > S.t) { const n = Math.round(80 * spd); for (let i = 0; i < n; i++) crustStep(); if (S.t >= S.scarUntil) { refreshFood(); measure(); } }
+      const lt = Math.max(1, Math.round(2 * spd)); for (let i = 0; i < lt; i++) lifeTick();
+      if (wall - S.lastFood > 4 && S.scarUntil > S.t - 50) { S.lastFood = wall; refreshFood(); }
+    }
+    if (S.t < Tpres && wall - S.lastGain > 0.4) {
+      S.lastGain = wall; const p = readPsi(); let s = 0; for (let k = 0; k < p.length; k++) s += p[k] * p[k];
+      S.gain = Math.min(400, Math.max(1, 0.45 / Math.sqrt(s / p.length + 1e-12)));
+    }
+    if (wall - S.lastCensus > (S.t < Tpres ? 2.5 : 1.5)) { S.lastCensus = wall; if (S.t > L.tauQ * 0.6) measure(); }
+  }
+  // HUD
+  const st = stageOf();
+  for (let k = 0; k < 4; k++) $('s' + k).className = k === st ? 'on' : '';
+  $('tStage').innerHTML = '<b>' + ['MOLTEN', 'COOLING', 'AGEING', 'LIFE'][st] + '</b>';
+  $('tNow').textContent = S.t.toFixed(1);
+  $('tEps').textContent = KER.epsAt(L, S.t).toFixed(3);
+  const w = KER.windAt(L, S.t, G.r); $('tWind').textContent = w === 0 ? 'calm' : (w > 0 ? '→ ' : '← ') + Math.abs(w).toFixed(2);
+  $('prog').style.width = (100 * Math.min(1, S.t / Tpres) * (S.lifeOn ? 1 : 0.8) + (S.lifeOn ? 0 : 0)) + '%';
+  if (S.lifeOn) $('prog').style.width = '100%';
+  // camera
+  if (cam.auto) cam.yaw += dtw * 0.06;
+  const B = camBasis();
+  const sa = wall * 0.03 + 2.3, sun = [Math.cos(sa), 0.42, Math.sin(sa)], sl = Math.hypot(...sun);
+  const ma = wall * 0.11, moon = [2.15 * Math.cos(ma), 0.55 * Math.sin(ma * 0.7) + 0.25, 2.15 * Math.sin(ma)];
+  // render
+  if (S.noRender) { requestAnimationFrame(frame); return; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cvs.width, cvs.height);
+  gl.useProgram(P_REN.p); gl.bindVertexArray(vao);
+  const u = P_REN.u;
+  bindTex(0, psiT[S.cur].t, u.uPsi); bindTex(1, lifeT[S.lifeCur].t, u.uLife); bindTex(2, foodTex, u.uFood); bindTex(3, probeTex, u.uProbe);
+  gl.uniform2f(u.uRes, cvs.width, cvs.height); gl.uniform1f(u.uTime, wall); gl.uniform1f(u.uT, S.t);
+  gl.uniform1f(u.uEps, KER.epsAt(L, S.t)); gl.uniform1f(u.uEps0, L.eps0); gl.uniform1f(u.uEpsF, L.epsF); gl.uniform1f(u.uPTau, PT);
+  gl.uniform1f(u.uHue, L.hue); gl.uniform1f(u.uLifeOn, S.lifeOn ? 1 : 0); gl.uniform1f(u.uLens, 0.010); gl.uniform1f(u.uGain, S.gain);
+  gl.uniform3fv(u.camP, B.P); gl.uniform3fv(u.camR, B.R); gl.uniform3fv(u.camU, B.U); gl.uniform3fv(u.camF, B.F);
+  gl.uniform3fv(u.sunD, sun.map(v => v / sl)); gl.uniform3fv(u.moonP, moon);
+  const showMap = $('layer').value === '1';
+  gl.uniform1i(u.uMap, showMap ? 1 : 0);
+  const mw = Math.min(cvs.width * 0.42, 520 * cvs.width / innerWidth), mh = mw * NV / NU;
+  gl.uniform4f(u.uMapRect, 20 * cvs.width / innerWidth, cvs.height - (186 * cvs.height / innerHeight) - mh, mw, mh);
+  quad();
+  requestAnimationFrame(frame);
+}
+
+// expose for tests
+function injectPsi(p) { gl.bindTexture(gl.TEXTURE_2D, psiT[S.cur].t); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, NU, NV, gl.RED, gl.FLOAT, p); }
+window.KERROSTUMA = { S, G, cam, gl, P_REN, crustStep, readPsi, measure, newWorld, probeAt, lifeTick, readLife, startLife, injectPsi };
+newWorld(+(location.hash.slice(1)) || 7);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
